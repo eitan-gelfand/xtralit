@@ -1,0 +1,5 @@
+brother_ql
+Pillow
+requests
+python-dotenv
+flask
