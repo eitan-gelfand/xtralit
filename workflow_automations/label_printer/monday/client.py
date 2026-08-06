@@ -22,6 +22,7 @@ NAME_COLUMN_ID = os.environ.get("NAME_COLUMN_ID")  # unused: item name is the bu
 NUMBER_COLUMN_ID = os.environ.get("NUMBER_COLUMN_ID", "numeric_mknnwms1")  # "N of samples"
 ADD_SAMPLES_COLUMN_ID = os.environ.get("ADD_SAMPLES_COLUMN_ID", "dropdown_mkp0kky2")  # "Add. samples"
 DATE_COLUMN_ID = os.environ.get("DATE_COLUMN_ID", "date4")  # "Date"
+BRINE_COLUMN_ID = os.environ.get("BRINE_COLUMN_ID", "lookup_mm5zjdyk")  # "Brine - Short Name" (mirror column)
 
 
 def _run_query(query: str, variables: dict = None) -> dict:
@@ -63,11 +64,15 @@ def list_active_requests_items(board_id: str = None, group_id: str = None) -> li
 
 
 def get_item_fields(item_id: str, number_column_id: str = None, add_samples_column_id: str = None,
-                     date_column_id: str = None) -> dict:
-    """Fetch fresh fields for one item: name, sample count, additional-sample categories, date."""
+                     date_column_id: str = None, brine_column_id: str = None) -> dict:
+    """Fetch fresh fields for one item: name, sample count, additional-sample categories, date, brine short name."""
     number_column_id = number_column_id or NUMBER_COLUMN_ID
     add_samples_column_id = add_samples_column_id or ADD_SAMPLES_COLUMN_ID
     date_column_id = date_column_id or DATE_COLUMN_ID
+    brine_column_id = brine_column_id or BRINE_COLUMN_ID
+    # Mirror columns (like "Brine - Short Name") return null via the generic
+    # text/value fields in this API version - the actual value only comes
+    # through the typed MirrorValue.display_value fragment.
     query = """
     query ($itemId: [ID!], $columnIds: [String!]) {
       items(ids: $itemId) {
@@ -76,17 +81,18 @@ def get_item_fields(item_id: str, number_column_id: str = None, add_samples_colu
         column_values(ids: $columnIds) {
           id
           text
+          ... on MirrorValue { display_value }
         }
       }
     }
     """
-    column_ids = [c for c in (number_column_id, add_samples_column_id, date_column_id) if c]
+    column_ids = [c for c in (number_column_id, add_samples_column_id, date_column_id, brine_column_id) if c]
     data = _run_query(query, {"itemId": [item_id], "columnIds": column_ids})
     items = data.get("items") or []
     if not items:
         raise ValueError(f"Item {item_id} not found")
     item = items[0]
-    col_by_id = {c["id"]: c["text"] for c in item["column_values"]}
+    col_by_id = {c["id"]: (c.get("display_value") or c.get("text")) for c in item["column_values"]}
 
     n_samples_text = (col_by_id.get(number_column_id) or "0").strip()
     try:
@@ -98,6 +104,7 @@ def get_item_fields(item_id: str, number_column_id: str = None, add_samples_colu
     add_samples = [s.strip() for s in add_samples_text.split(",") if s.strip()]
 
     date = col_by_id.get(date_column_id) or ""
+    brine = col_by_id.get(brine_column_id) or ""
 
     return {
         "id": item["id"],
@@ -105,6 +112,7 @@ def get_item_fields(item_id: str, number_column_id: str = None, add_samples_colu
         "n_samples": n_samples,
         "add_samples": add_samples,
         "date": date,
+        "brine": brine,
     }
 
 

@@ -20,7 +20,8 @@ BLOCK_GAP = 20  # gap between the title block and the date line
 MAX_TITLE_LINES = 6  # sanity cap against pathological input, not a normal ceiling
 
 NAME_FONT_SIZE = 48
-INFO_FONT_SIZE = 40  # subtitle (sample/category) words and the date line
+INFO_FONT_SIZE = 40  # subtitle (sample/category) words, and the date/brine row
+COLUMN_GAP = 40  # horizontal gap between the date and brine columns on row 2
 
 # Bold system font, first match wins. Different install layouts per OS, so
 # try the common ones for each rather than hardcoding a single Mac-only path
@@ -138,9 +139,30 @@ def _draw_line(draw: ImageDraw.ImageDraw, line: list, y: int, max_ascent: int):
         x += draw.textlength(text, font=font)
 
 
-def build_label_image(name: str, subtitle: str, date: str = "") -> Image.Image:
+def _layout_block(measurer: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_width: int,
+                   start_y: int) -> tuple:
+    """Wraps text (hyphen/char fallback included, via _tokenize/_wrap_tokens)
+    into as many lines as needed and stacks them from start_y. Returns
+    (line_layout, end_y) where line_layout is [(line, y, max_ascent), ...]
+    ready for _draw_line, in the same shape used for the title block."""
+    tokens = _tokenize(measurer, text, font, max_width)
+    lines = _wrap_tokens(measurer, tokens, max_width, MAX_TITLE_LINES)
+    y = start_y
+    layout = []
+    for line in lines:
+        _, line_h, max_ascent = _line_metrics(measurer, line)
+        layout.append((line, y, max_ascent))
+        y += line_h + LINE_GAP
+    return layout, y - LINE_GAP if layout else start_y
+
+
+def build_label_image(name: str, subtitle: str, date: str = "", brine: str = "") -> Image.Image:
     """Draw '<name> - <subtitle>' as one wrapped row (name at NAME_FONT_SIZE,
-    subtitle at INFO_FONT_SIZE), then a date row below. Height fits content."""
+    subtitle at INFO_FONT_SIZE), then a second row with the date and (if set)
+    the brine short name as two columns - date | brine: <value>, side by
+    side. If both together (or brine alone) are too wide to fit, brine wraps
+    onto its own line(s) below using the same hyphen/character-fallback wrap
+    as the name, rather than overflowing off the label. Height fits content."""
     name_font = _load_font(NAME_FONT_SIZE)
     info_font = _load_font(INFO_FONT_SIZE)
 
@@ -163,10 +185,29 @@ def build_label_image(name: str, subtitle: str, date: str = "") -> Image.Image:
     y += BLOCK_GAP - LINE_GAP
 
     date_text = f"date: {date}" if date else ""
-    if date_text:
-        date_ascent, date_descent = info_font.getmetrics()
-        date_y = y
-        y += date_ascent + date_descent
+    brine_text = f"brine: {brine}" if brine else ""
+    date_w = measurer.textlength(date_text, font=info_font) if date_text else 0
+    brine_w = measurer.textlength(brine_text, font=info_font) if brine_text else 0
+    side_by_side = bool(
+        date_text and brine_text and brine_w <= max_width and date_w + COLUMN_GAP + brine_w <= max_width
+    )
+
+    row2_y = None
+    brine_layout = []
+    if side_by_side:
+        info_ascent, info_descent = info_font.getmetrics()
+        row2_y = y
+        y += info_ascent + info_descent
+    else:
+        if date_text:
+            info_ascent, info_descent = info_font.getmetrics()
+            row2_y = y
+            y += info_ascent + info_descent
+            if brine_text:
+                y += LINE_GAP
+        if brine_text:
+            brine_layout, y = _layout_block(measurer, brine_text, info_font, max_width, y)
+            y += LINE_GAP
 
     total_height = y + MARGIN
 
@@ -176,24 +217,33 @@ def build_label_image(name: str, subtitle: str, date: str = "") -> Image.Image:
     for line, line_y, max_ascent in line_layout:
         _draw_line(draw, line, line_y, max_ascent)
 
-    if date_text:
-        date_w = draw.textlength(date_text, font=info_font)
-        draw.text(((LABEL_WIDTH - date_w) / 2, date_y), date_text, fill=0, font=info_font)
+    if side_by_side:
+        combined_w = date_w + COLUMN_GAP + brine_w
+        x = (LABEL_WIDTH - combined_w) / 2
+        draw.text((x, row2_y), date_text, fill=0, font=info_font)
+        draw.text((x + date_w + COLUMN_GAP, row2_y), brine_text, fill=0, font=info_font)
+    else:
+        if date_text:
+            draw.text(((LABEL_WIDTH - date_w) / 2, row2_y), date_text, fill=0, font=info_font)
+        for line, line_y, max_ascent in brine_layout:
+            _draw_line(draw, line, line_y, max_ascent)
 
     return image
 
 
 def build_labels_for_item(fields: dict) -> list[Image.Image]:
-    """fields: {name, n_samples, add_samples, date} from monday.client.get_item_fields.
+    """fields: {name, n_samples, add_samples, date, brine} from
+    monday.client.get_item_fields.
 
     Returns one image per physical label to print: N numbered sample labels,
     then one label per selected Add. samples category.
     """
     name = fields["name"]
     date = fields.get("date", "")
+    brine = fields.get("brine", "")
     labels = []
     for i in range(1, fields.get("n_samples", 0) + 1):
-        labels.append(build_label_image(name, str(i), date))
+        labels.append(build_label_image(name, str(i), date, brine))
     for category in fields.get("add_samples", []):
-        labels.append(build_label_image(name, category, date))
+        labels.append(build_label_image(name, category, date, brine))
     return labels

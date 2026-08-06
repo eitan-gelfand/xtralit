@@ -41,7 +41,7 @@ jobs:
         run: |
           mkdir dist\LabelPrinter-dist
           copy dist\LabelPrinter.exe dist\LabelPrinter-dist\
-          copy settings.env.example dist\LabelPrinter-dist\settings.env.example
+          copy settings.env.example dist\LabelPrinter-dist\settings.env
           copy SETUP.txt dist\LabelPrinter-dist\SETUP.txt
 
       - uses: actions/upload-artifact@v4

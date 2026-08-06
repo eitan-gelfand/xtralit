@@ -11,8 +11,6 @@ One-time setup (a few minutes):
 
 2. Add it to settings.env
    - In the same folder as LabelPrinter.exe, find "settings.env"
-     (if you only see "settings.env.example", make a copy of it and
-     rename the copy to "settings.env")
    - Right-click settings.env -> Open with -> Notepad
    - Find the line that says:  MONDAY_API_TOKEN=
    - Paste your token right after the = sign, with no spaces
