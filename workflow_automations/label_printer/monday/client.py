@@ -17,6 +17,7 @@ GROUP_ID = os.environ.get("GROUP_ID")
 NAME_COLUMN_ID = os.environ.get("NAME_COLUMN_ID")  # unused: item name is the built-in "name" field
 NUMBER_COLUMN_ID = os.environ.get("NUMBER_COLUMN_ID")  # "N of samples" - numeric_mknnwms1
 ADD_SAMPLES_COLUMN_ID = os.environ.get("ADD_SAMPLES_COLUMN_ID")  # "Add. samples" - dropdown_mkp0kky2
+DATE_COLUMN_ID = os.environ.get("DATE_COLUMN_ID", "date4")  # "Date"
 
 
 def _run_query(query: str, variables: dict = None) -> dict:
@@ -57,10 +58,12 @@ def list_active_requests_items(board_id: str = None, group_id: str = None) -> li
     return boards[0]["groups"][0]["items_page"]["items"]
 
 
-def get_item_fields(item_id: str, number_column_id: str = None, add_samples_column_id: str = None) -> dict:
-    """Fetch fresh fields for one item: name, sample count, additional-sample categories."""
+def get_item_fields(item_id: str, number_column_id: str = None, add_samples_column_id: str = None,
+                     date_column_id: str = None) -> dict:
+    """Fetch fresh fields for one item: name, sample count, additional-sample categories, date."""
     number_column_id = number_column_id or NUMBER_COLUMN_ID
     add_samples_column_id = add_samples_column_id or ADD_SAMPLES_COLUMN_ID
+    date_column_id = date_column_id or DATE_COLUMN_ID
     query = """
     query ($itemId: [ID!], $columnIds: [String!]) {
       items(ids: $itemId) {
@@ -73,7 +76,7 @@ def get_item_fields(item_id: str, number_column_id: str = None, add_samples_colu
       }
     }
     """
-    data = _run_query(query, {"itemId": [item_id], "columnIds": [number_column_id, add_samples_column_id]})
+    data = _run_query(query, {"itemId": [item_id], "columnIds": [number_column_id, add_samples_column_id, date_column_id]})
     items = data.get("items") or []
     if not items:
         raise ValueError(f"Item {item_id} not found")
@@ -86,11 +89,14 @@ def get_item_fields(item_id: str, number_column_id: str = None, add_samples_colu
     add_samples_text = col_by_id.get(add_samples_column_id) or ""
     add_samples = [s.strip() for s in add_samples_text.split(",") if s.strip()]
 
+    date = col_by_id.get(date_column_id) or ""
+
     return {
         "id": item["id"],
         "name": item["name"],
         "n_samples": n_samples,
         "add_samples": add_samples,
+        "date": date,
     }
 
 
