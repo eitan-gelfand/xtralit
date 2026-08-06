@@ -29,8 +29,12 @@ jobs:
       - name: Build LabelPrinter.exe
         run: >
           pyinstaller --onefile --name LabelPrinter
+          --paths .
           --add-data "app/templates;templates"
           --hidden-import brother_ql.backends.network
+          --hidden-import monday.client
+          --hidden-import printer.send
+          --hidden-import label.render
           app/main.py
 
       - name: Assemble distributable folder

@@ -11,9 +11,22 @@ import logging
 import os
 import sys
 import threading
+import traceback
 import webbrowser
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _pause_on_crash(exc: BaseException):
+    """A double-clicked .exe's console window closes the instant the process
+    exits, so an unhandled exception flashes and vanishes before anyone can
+    read it. Print the traceback and wait for a keypress instead - only
+    matters for the frozen build; in dev the traceback stays on screen and
+    exiting immediately is fine."""
+    traceback.print_exception(type(exc), exc, exc.__traceback__)
+    if getattr(sys, "frozen", False):
+        input("\nSomething went wrong (see above). Press Enter to close this window...")
+    sys.exit(1)
 
 
 def _settings_env_path() -> str:
@@ -27,28 +40,31 @@ def _settings_env_path() -> str:
     return os.path.join(base_dir, "settings.env")
 
 
-from dotenv import load_dotenv  # noqa: E402
+try:
+    from dotenv import load_dotenv
 
-# Must run before importing monday.client / printer.send, whose own
-# load_dotenv() calls at import time won't override already-set env vars.
-load_dotenv(_settings_env_path())
+    # Must run before importing monday.client / printer.send, whose own
+    # load_dotenv() calls at import time won't override already-set env vars.
+    load_dotenv(_settings_env_path())
 
-from flask import Flask, render_template, jsonify  # noqa: E402
+    from flask import Flask, render_template, jsonify
 
-from monday.client import list_active_requests_items, get_item_fields  # noqa: E402
-from label.render import build_labels_for_item  # noqa: E402
-from printer.send import print_images  # noqa: E402
+    from monday.client import list_active_requests_items, get_item_fields
+    from label.render import build_labels_for_item
+    from printer.send import print_images
 
-# PyInstaller extracts bundled data files (see --add-data in the build
-# workflow) into a temp dir exposed as sys._MEIPASS; Flask's automatic
-# template-folder detection isn't reliable there, so point it explicitly.
-if getattr(sys, "frozen", False):
-    _template_folder = os.path.join(sys._MEIPASS, "templates")
-else:
-    _template_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
+    # PyInstaller extracts bundled data files (see --add-data in the build
+    # workflow) into a temp dir exposed as sys._MEIPASS; Flask's automatic
+    # template-folder detection isn't reliable there, so point it explicitly.
+    if getattr(sys, "frozen", False):
+        _template_folder = os.path.join(sys._MEIPASS, "templates")
+    else:
+        _template_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 
-app = Flask(__name__, template_folder=_template_folder)
-logging.basicConfig(level=logging.INFO)
+    app = Flask(__name__, template_folder=_template_folder)
+    logging.basicConfig(level=logging.INFO)
+except Exception as exc:
+    _pause_on_crash(exc)
 
 APP_URL = "http://127.0.0.1:5050"
 
@@ -88,20 +104,23 @@ def print_item_route(item_id):
 
 
 if __name__ == "__main__":
-    # debug/reloader off by default: the reloader forks a child process that,
-    # if killed incompletely (e.g. Ctrl+C during a print), leaves a stale
-    # process holding port 5050 that silently serves old code on next start.
-    # Set LABEL_PRINTER_DEBUG=1 for dev-time auto-reload when iterating on
-    # templates/routes.
-    debug = os.environ.get("LABEL_PRINTER_DEBUG") == "1"
+    try:
+        # debug/reloader off by default: the reloader forks a child process
+        # that, if killed incompletely (e.g. Ctrl+C during a print), leaves a
+        # stale process holding port 5050 that silently serves old code on
+        # next start. Set LABEL_PRINTER_DEBUG=1 for dev-time auto-reload
+        # while iterating on templates/routes.
+        debug = os.environ.get("LABEL_PRINTER_DEBUG") == "1"
 
-    # With the reloader on, this module runs twice (monitor + worker); only
-    # open the browser in the actual worker process to avoid two tabs.
-    if not debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
-        threading.Timer(1.5, lambda: webbrowser.open(APP_URL)).start()
+        # With the reloader on, this module runs twice (monitor + worker);
+        # only open the browser in the actual worker process to avoid two tabs.
+        if not debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+            threading.Timer(1.5, lambda: webbrowser.open(APP_URL)).start()
 
-    print("Label Printer is running.")
-    print(f"If your browser doesn't open automatically, go to {APP_URL}")
-    print("Keep this window open while printing. Close it to stop.")
+        print("Label Printer is running.")
+        print(f"If your browser doesn't open automatically, go to {APP_URL}")
+        print("Keep this window open while printing. Close it to stop.")
 
-    app.run(host="127.0.0.1", port=5050, debug=debug, threaded=True)
+        app.run(host="127.0.0.1", port=5050, debug=debug, threaded=True)
+    except Exception as exc:
+        _pause_on_crash(exc)
