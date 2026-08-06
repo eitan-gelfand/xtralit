@@ -23,7 +23,8 @@ cp .env.example .env   # fill in values, see below
 3. `label/` — combines 1 + 2: renders real monday data onto a label image
    sized/laid out for the loaded stock, sends to printer.
 4. `app/` — Flask app tying it all together with a "Print Label" button per
-   item.
+   item. Runs on `http://127.0.0.1:5050` (not 5000 - macOS AirPlay Receiver
+   uses that port).
 
 ## Config (`.env`)
 

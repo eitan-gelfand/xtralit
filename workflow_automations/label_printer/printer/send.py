@@ -4,6 +4,7 @@ Run directly for the Step 1 checkpoint: prints one hardcoded test label.
 """
 import os
 import sys
+import time
 
 from brother_ql.conversion import convert
 from brother_ql.backends.helpers import send
@@ -50,6 +51,17 @@ def print_image(image: Image.Image, label_size: str = None, printer_ip: str = No
         blocking=True,
     )
     return result
+
+
+def print_images(images: list, **kwargs) -> list:
+    """Send several images in sequence. The printer needs a moment to finish/cut
+    between jobs or it refuses the next connection, so pace consecutive sends."""
+    results = []
+    for idx, image in enumerate(images):
+        if idx > 0:
+            time.sleep(3)
+        results.append(print_image(image, **kwargs))
+    return results
 
 
 def _build_test_image(text: str = "TEST 001") -> Image.Image:

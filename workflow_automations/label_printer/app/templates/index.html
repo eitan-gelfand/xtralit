@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Label Printer</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; }
+    h1 { font-size: 20px; }
+    ul { list-style: none; padding: 0; }
+    li { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #ddd; }
+    button { padding: 6px 14px; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    #status { margin-top: 16px; padding: 10px; border-radius: 4px; display: none; }
+    #status.ok { display: block; background: #e6f4ea; color: #1e7e34; }
+    #status.error { display: block; background: #fdecea; color: #b32424; }
+  </style>
+</head>
+<body>
+  <h1>Active Requests</h1>
+  <ul>
+    {% for item in items %}
+    <li>
+      <span>{{ item.name }}</span>
+      <button data-item-id="{{ item.id }}" onclick="printItem(this)">Print Label</button>
+    </li>
+    {% else %}
+    <li>No items in Active Requests.</li>
+    {% endfor %}
+  </ul>
+  <div id="status"></div>
+
+  <script>
+    async function printItem(btn) {
+      const itemId = btn.dataset.itemId;
+      const statusEl = document.getElementById('status');
+      btn.disabled = true;
+      statusEl.className = '';
+      statusEl.textContent = 'Printing...';
+      statusEl.style.display = 'block';
+      try {
+        const resp = await fetch(`/print/${itemId}`, { method: 'POST' });
+        const data = await resp.json();
+        statusEl.className = data.ok ? 'ok' : 'error';
+        statusEl.textContent = data.message;
+      } catch (err) {
+        statusEl.className = 'error';
+        statusEl.textContent = `Request failed: ${err}`;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>
