@@ -13,10 +13,14 @@
     #status { margin-top: 16px; padding: 10px; border-radius: 4px; display: none; }
     #status.ok { display: block; background: #e6f4ea; color: #1e7e34; }
     #status.error { display: block; background: #fdecea; color: #b32424; }
+    #load-error { padding: 10px; border-radius: 4px; background: #fdecea; color: #b32424; margin-bottom: 16px; }
   </style>
 </head>
 <body>
   <h1>Active Requests</h1>
+  {% if error %}
+  <div id="load-error">{{ error }}</div>
+  {% endif %}
   <ul>
     {% for item in items %}
     <li>
@@ -24,7 +28,7 @@
       <button data-item-id="{{ item.id }}" onclick="printItem(this)">Print Label</button>
     </li>
     {% else %}
-    <li>No items in Active Requests.</li>
+    {% if not error %}<li>No items in Active Requests.</li>{% endif %}
     {% endfor %}
   </ul>
   <div id="status"></div>

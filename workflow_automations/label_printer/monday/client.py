@@ -76,15 +76,19 @@ def get_item_fields(item_id: str, number_column_id: str = None, add_samples_colu
       }
     }
     """
-    data = _run_query(query, {"itemId": [item_id], "columnIds": [number_column_id, add_samples_column_id, date_column_id]})
+    column_ids = [c for c in (number_column_id, add_samples_column_id, date_column_id) if c]
+    data = _run_query(query, {"itemId": [item_id], "columnIds": column_ids})
     items = data.get("items") or []
     if not items:
         raise ValueError(f"Item {item_id} not found")
     item = items[0]
     col_by_id = {c["id"]: c["text"] for c in item["column_values"]}
 
-    n_samples_text = col_by_id.get(number_column_id) or "0"
-    n_samples = int(n_samples_text) if n_samples_text.strip().isdigit() else 0
+    n_samples_text = (col_by_id.get(number_column_id) or "0").strip()
+    try:
+        n_samples = max(0, int(float(n_samples_text)))
+    except ValueError:
+        n_samples = 0
 
     add_samples_text = col_by_id.get(add_samples_column_id) or ""
     add_samples = [s.strip() for s in add_samples_text.split(",") if s.strip()]

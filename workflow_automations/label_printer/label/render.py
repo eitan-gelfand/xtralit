@@ -1,22 +1,33 @@
-"""Label layout: item name on top (wraps to 2 lines if long), sample/date rows below.
+"""Label layout: name + sample/category on one wrapped row, date below.
 
 One monday item can produce several physical labels:
 - one per sample, numbered 1..N ("N of samples")
 - one per selected "Add. samples" category, showing the category name instead
   of a number
+
+Image height is computed per-label from the actual content, so a short
+label (e.g. no wrap, single date line) doesn't carry blank space on the
+62mm endless roll.
 """
+import re
+
 from PIL import Image, ImageDraw, ImageFont
 
-# 62mm endless roll (DK-22205) @ 300dpi. Height is a print-length guess for a
-# three-line label; adjust after checking against the physical output.
-LABEL_WIDTH = 696
-LABEL_HEIGHT = 340
-MAX_NAME_LINES = 2
-NAME_MARGIN = 20  # left/right padding the name must wrap within
+LABEL_WIDTH = 696  # 62mm endless roll (DK-22205) @ 300dpi
+MARGIN = 20  # top/bottom/left/right padding
+LINE_GAP = 6
+BLOCK_GAP = 20  # gap between the title block and the date line
+MAX_TITLE_LINES = 6  # sanity cap against pathological input, not a normal ceiling
 
 NAME_FONT_SIZE = 48
-INFO_FONT_SIZE = 40  # shared, constant size for the sample/category row and the date row
+INFO_FONT_SIZE = 40  # subtitle (sample/category) words and the date line
 FONT_PATH = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
+
+# Splits a word after each hyphen (keeping the hyphen attached to the
+# preceding chunk) so long hyphenated codes like "1R-DS-TOE40(106-250)-70(2)-Li"
+# - this board's typical item-name shape, with no spaces at all - can still
+# wrap instead of running off the edge of the label.
+_HYPHEN_SPLIT = re.compile(r"(?<=-)")
 
 
 def _load_font(size: int) -> ImageFont.FreeTypeFont:
@@ -26,65 +37,136 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont:
         return ImageFont.load_default()
 
 
-def _wrap_to_lines(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_width: int,
-                    max_lines: int) -> list[str]:
-    """Word-wrap text to at most max_lines, breaking mid-word only if a single word overflows."""
-    words = text.split()
-    if not words:
+def _split_oversized_chunk(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont,
+                            max_width: int) -> list:
+    """Last-resort character-level split for a single chunk still wider than
+    max_width on its own (e.g. a long run with no hyphens)."""
+    if draw.textlength(text, font=font) <= max_width or len(text) <= 1:
         return [text]
-
-    lines = []
+    pieces = []
     current = ""
-    for word in words:
-        candidate = f"{current} {word}".strip()
-        if draw.textlength(candidate, font=font) <= max_width:
-            current = candidate
-            continue
-        if current:
-            lines.append(current)
-            current = word
+    for ch in text:
+        candidate = current + ch
+        if current and draw.textlength(candidate, font=font) > max_width:
+            pieces.append(current)
+            current = ch
         else:
-            current = word  # single word already too wide; let it overflow rather than break it
-        if len(lines) == max_lines - 1:
-            break
+            current = candidate
+    if current:
+        pieces.append(current)
+    return pieces
+
+
+def _tokenize(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list:
+    """Returns [(chunk, font, space_before), ...]. Words are split from
+    whitespace (space_before=True for the first chunk of each word) and
+    further split at hyphens (space_before=False, no visual gap) so a
+    single long hyphenated word can still wrap across lines."""
+    tokens = []
+    for word in text.split():
+        chunks = [c for c in _HYPHEN_SPLIT.split(word) if c]
+        for ci, chunk in enumerate(chunks):
+            for si, sub in enumerate(_split_oversized_chunk(draw, chunk, font, max_width)):
+                tokens.append((sub, font, ci == 0 and si == 0))
+    return tokens
+
+
+def _wrap_tokens(draw: ImageDraw.ImageDraw, tokens: list, max_width: int, max_lines: int) -> list:
+    """Greedily wraps pre-tokenized (text, font, space_before) tuples onto
+    lines. Never drops content: if max_lines is reached, remaining tokens
+    still get appended to the last line rather than silently discarded."""
+    lines = []
+    current = []
+    current_width = 0
+
+    for text, font, space_before in tokens:
+        space_width = draw.textlength(" ", font=font) if space_before else 0
+        word_width = draw.textlength(text, font=font)
+        added_width = word_width + (space_width if current else 0)
+
+        if current and current_width + added_width > max_width and len(lines) < max_lines - 1:
+            lines.append(current)
+            current = [(text, font, False)]
+            current_width = word_width
+        else:
+            current.append((text, font, space_before if current else False))
+            current_width += added_width
+
     if current:
         lines.append(current)
-
-    if len(lines) > max_lines:
-        lines = lines[:max_lines]
     return lines
 
 
-def build_label_image(name: str, subtitle: str, date: str = "") -> Image.Image:
-    """Draw item name (top, wraps up to MAX_NAME_LINES), subtitle (sample/category), date."""
-    image = Image.new("L", (LABEL_WIDTH, LABEL_HEIGHT), color=255)
-    draw = ImageDraw.Draw(image)
+def _line_metrics(draw: ImageDraw.ImageDraw, line: list) -> tuple:
+    """Returns (rendered_width, height, max_ascent) for a mixed-font line,
+    where height/ascent account for each font's real metrics so words at
+    different sizes share one baseline instead of stacking by bbox height."""
+    width = 0
+    max_ascent = 0
+    max_descent = 0
+    for text, font, space_before in line:
+        space_width = draw.textlength(" ", font=font) if space_before else 0
+        w = draw.textlength(text, font=font)
+        ascent, descent = font.getmetrics()
+        width += w + (space_width if width else 0)
+        max_ascent = max(max_ascent, ascent)
+        max_descent = max(max_descent, descent)
+    return width, max_ascent + max_descent, max_ascent
 
+
+def _draw_line(draw: ImageDraw.ImageDraw, line: list, y: int, max_ascent: int):
+    width, _, _ = _line_metrics(draw, line)
+    x = (LABEL_WIDTH - width) / 2
+    for text, font, space_before in line:
+        if x > (LABEL_WIDTH - width) / 2:
+            space_width = draw.textlength(" ", font=font) if space_before else 0
+            x += space_width
+        ascent, _ = font.getmetrics()
+        draw.text((x, y + (max_ascent - ascent)), text, fill=0, font=font)
+        x += draw.textlength(text, font=font)
+
+
+def build_label_image(name: str, subtitle: str, date: str = "") -> Image.Image:
+    """Draw '<name> - <subtitle>' as one wrapped row (name at NAME_FONT_SIZE,
+    subtitle at INFO_FONT_SIZE), then a date row below. Height fits content."""
     name_font = _load_font(NAME_FONT_SIZE)
     info_font = _load_font(INFO_FONT_SIZE)
 
-    name_lines = _wrap_to_lines(draw, name, name_font, LABEL_WIDTH - 2 * NAME_MARGIN, MAX_NAME_LINES)
+    measurer = ImageDraw.Draw(Image.new("L", (1, 1)))
+    max_width = LABEL_WIDTH - 2 * MARGIN
 
-    y = 20
-    line_gap = 6
-    line_heights = []
-    for line in name_lines:
-        bbox = draw.textbbox((0, 0), line, font=name_font)
-        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        draw.text(((LABEL_WIDTH - w) / 2, y), line, fill=0, font=name_font)
-        line_heights.append(h)
-        y += h + line_gap
+    tokens = (
+        _tokenize(measurer, name, name_font, max_width)
+        + [("-", name_font, True)]
+        + _tokenize(measurer, subtitle, info_font, max_width)
+    )
+    title_lines = _wrap_tokens(measurer, tokens, max_width, MAX_TITLE_LINES)
 
-    sub_bbox = draw.textbbox((0, 0), subtitle, font=info_font)
-    sub_w, sub_h = sub_bbox[2] - sub_bbox[0], sub_bbox[3] - sub_bbox[1]
-    sub_y = y + 20
-    draw.text(((LABEL_WIDTH - sub_w) / 2, sub_y), subtitle, fill=0, font=info_font)
+    y = MARGIN
+    line_layout = []  # (line, y, max_ascent)
+    for line in title_lines:
+        _, line_h, max_ascent = _line_metrics(measurer, line)
+        line_layout.append((line, y, max_ascent))
+        y += line_h + LINE_GAP
+    y += BLOCK_GAP - LINE_GAP
 
-    if date:
-        date_text = f"date: {date}"
-        date_bbox = draw.textbbox((0, 0), date_text, font=info_font)
-        date_w, date_h = date_bbox[2] - date_bbox[0], date_bbox[3] - date_bbox[1]
-        draw.text(((LABEL_WIDTH - date_w) / 2, sub_y + sub_h + 15), date_text, fill=0, font=info_font)
+    date_text = f"date: {date}" if date else ""
+    if date_text:
+        date_ascent, date_descent = info_font.getmetrics()
+        date_y = y
+        y += date_ascent + date_descent
+
+    total_height = y + MARGIN
+
+    image = Image.new("L", (LABEL_WIDTH, total_height), color=255)
+    draw = ImageDraw.Draw(image)
+
+    for line, line_y, max_ascent in line_layout:
+        _draw_line(draw, line, line_y, max_ascent)
+
+    if date_text:
+        date_w = draw.textlength(date_text, font=info_font)
+        draw.text(((LABEL_WIDTH - date_w) / 2, date_y), date_text, fill=0, font=info_font)
 
     return image
 
@@ -99,7 +181,7 @@ def build_labels_for_item(fields: dict) -> list[Image.Image]:
     date = fields.get("date", "")
     labels = []
     for i in range(1, fields.get("n_samples", 0) + 1):
-        labels.append(build_label_image(name, f"sample: {i}", date))
+        labels.append(build_label_image(name, str(i), date))
     for category in fields.get("add_samples", []):
         labels.append(build_label_image(name, category, date))
     return labels

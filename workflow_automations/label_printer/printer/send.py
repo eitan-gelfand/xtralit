@@ -3,6 +3,7 @@
 Run directly for the Step 1 checkpoint: prints one hardcoded test label.
 """
 import os
+import socket
 import sys
 import time
 
@@ -17,6 +18,13 @@ load_dotenv()
 PRINTER_IP = os.environ.get("PRINTER_IP")
 PRINTER_MODEL = os.environ.get("PRINTER_MODEL", "QL-820NWB")
 LABEL_SIZE = os.environ.get("LABEL_SIZE")
+
+# brother_ql's network backend never sets a connect timeout of its own, so an
+# unreachable printer (wrong IP, dropped port, asleep with no RST) can hang
+# the caller for the OS's default TCP connect timeout (a minute or more) -
+# which would freeze the Flask app's single request thread. This bounds
+# every socket the process opens, including the printer connection.
+socket.setdefaulttimeout(10)
 
 
 def print_image(image: Image.Image, label_size: str = None, printer_ip: str = None, printer_model: str = None):
@@ -50,6 +58,11 @@ def print_image(image: Image.Image, label_size: str = None, printer_ip: str = No
         backend_identifier="network",
         blocking=True,
     )
+    # The network backend has no read-back channel, so 'did_print' and
+    # 'ready_for_next_job' are always False here regardless of whether the
+    # label actually printed - that's expected, not a failure signal. A raised
+    # exception (connection refused/timed out) is the only failure indicator
+    # this backend gives us.
     return result
 
 
