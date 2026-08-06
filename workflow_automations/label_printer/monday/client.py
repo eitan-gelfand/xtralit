@@ -11,12 +11,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 API_URL = "https://api.monday.com/v2"
+
+# Only MONDAY_API_TOKEN is secret/per-user. Everything else here describes
+# the Analytical Requests board's fixed structure, so it's baked in as a
+# default and only needs overriding in settings.env if the board changes.
 API_TOKEN = os.environ.get("MONDAY_API_TOKEN")
-BOARD_ID = os.environ.get("BOARD_ID")
-GROUP_ID = os.environ.get("GROUP_ID")
+BOARD_ID = os.environ.get("BOARD_ID", "1847896576")
+GROUP_ID = os.environ.get("GROUP_ID", "topics")  # "Active Requests"
 NAME_COLUMN_ID = os.environ.get("NAME_COLUMN_ID")  # unused: item name is the built-in "name" field
-NUMBER_COLUMN_ID = os.environ.get("NUMBER_COLUMN_ID")  # "N of samples" - numeric_mknnwms1
-ADD_SAMPLES_COLUMN_ID = os.environ.get("ADD_SAMPLES_COLUMN_ID")  # "Add. samples" - dropdown_mkp0kky2
+NUMBER_COLUMN_ID = os.environ.get("NUMBER_COLUMN_ID", "numeric_mknnwms1")  # "N of samples"
+ADD_SAMPLES_COLUMN_ID = os.environ.get("ADD_SAMPLES_COLUMN_ID", "dropdown_mkp0kky2")  # "Add. samples"
 DATE_COLUMN_ID = os.environ.get("DATE_COLUMN_ID", "date4")  # "Date"
 
 

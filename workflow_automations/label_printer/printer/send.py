@@ -15,9 +15,10 @@ from PIL import Image, ImageDraw, ImageFont
 
 load_dotenv()
 
-PRINTER_IP = os.environ.get("PRINTER_IP")
+GENERIC_XTRALIT_PRINTER_IP_HINT = "192.168.68.200"  # last known lab printer IP - it has changed before, keep in settings.env
+PRINTER_IP = os.environ.get("PRINTER_IP", GENERIC_XTRALIT_PRINTER_IP_HINT)
 PRINTER_MODEL = os.environ.get("PRINTER_MODEL", "QL-820NWB")
-LABEL_SIZE = os.environ.get("LABEL_SIZE")
+LABEL_SIZE = os.environ.get("LABEL_SIZE", "62")  # DK-22205, 62mm endless roll
 
 # brother_ql's network backend never sets a connect timeout of its own, so an
 # unreachable printer (wrong IP, dropped port, asleep with no RST) can hang

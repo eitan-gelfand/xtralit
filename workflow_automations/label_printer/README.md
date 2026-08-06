@@ -85,7 +85,44 @@ a stale process holding the port that silently keeps serving old code. Set
 and prefer `pkill -f "app/main.py"` over Ctrl+C if a restart seems to not be
 picking up changes.
 
+## Distributing to non-technical Windows colleagues
+
+Board/printer config (board/group/column ids, printer model, label size) is
+baked into `monday/client.py` / `printer/send.py` as defaults, since it's
+shared and not secret. Only two things are meant to live in a per-user
+`settings.env` sitting next to the executable:
+
+- `MONDAY_API_TOKEN` - secret, personal, tied to that person's monday.com
+  account and board permissions. Never bake one person's token into a
+  binary shared with others: it's not board-scoped (a leak/decompile
+  exposes their whole monday account), it breaks for everyone if revoked,
+  and it misattributes everyone's activity to one person. Since colleagues
+  already have their own monday.com logins with access to this board, each
+  person should generate their own personal token instead (Admin → API).
+- `PRINTER_IP` - not secret, but has already changed twice during this
+  project (sleep/wake, then a static-IP change), so it stays editable
+  rather than baked in.
+
+`settings.env` is never bundled inside the exe and is gitignored - it's
+created per-machine from `settings.env.example` + `SETUP.txt` (the
+non-technical setup guide shipped alongside the exe).
+
+The exe is built via `.github/workflows/build-windows.yml` on GitHub
+Actions' `windows-latest` runner (PyInstaller can't cross-compile, so this
+runs on push instead of locally on the Mac dev machine). That CI runner has
+no access to the lab LAN, so it only proves the exe builds and launches -
+not that it reaches monday.com or the printer. A real end-to-end smoke test
+on an actual Windows machine on the lab network is still required after
+each build.
+
+`app/main.py`'s entrypoint is frozen-aware (`sys.frozen`/`sys._MEIPASS`) so
+the same file serves both `python app/main.py` (dev) and the packaged
+`LabelPrinter.exe` - it resolves `settings.env` and the Flask template
+folder relative to the exe's location rather than assuming a dev checkout,
+and opens the default browser automatically on start.
+
 ## Out of scope for this POC
 
-Multi-machine distribution, auto-start/background service, web page auth,
-other boards/groups.
+Auto-start/background service, web page auth, other boards/groups, code
+signing (unsigned exe triggers a Windows SmartScreen warning - documented
+as an expected step in SETUP.txt, not fixed here).

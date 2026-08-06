@@ -1,0 +1,46 @@
+name: Build Windows exe (Label Printer)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "workflow_automations/label_printer/**"
+      - ".github/workflows/build-windows.yml"
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: workflow_automations/label_printer
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build LabelPrinter.exe
+        run: >
+          pyinstaller --onefile --name LabelPrinter
+          --add-data "app/templates;templates"
+          --hidden-import brother_ql.backends.network
+          app/main.py
+
+      - name: Assemble distributable folder
+        run: |
+          mkdir dist\LabelPrinter-dist
+          copy dist\LabelPrinter.exe dist\LabelPrinter-dist\
+          copy settings.env.example dist\LabelPrinter-dist\settings.env.example
+          copy SETUP.txt dist\LabelPrinter-dist\SETUP.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LabelPrinter-windows
+          path: workflow_automations/label_printer/dist/LabelPrinter-dist/

@@ -1,0 +1,42 @@
+LABEL PRINTER - SETUP GUIDE
+============================
+
+One-time setup (a few minutes):
+
+1. Get your personal monday.com API token
+   - Log into monday.com
+   - Click your profile picture (top right) -> Admin -> API
+   - Click "Generate" (or copy your existing token)
+   - Copy the long token text
+
+2. Add it to settings.env
+   - In the same folder as LabelPrinter.exe, find "settings.env"
+     (if you only see "settings.env.example", make a copy of it and
+     rename the copy to "settings.env")
+   - Right-click settings.env -> Open with -> Notepad
+   - Find the line that says:  MONDAY_API_TOKEN=
+   - Paste your token right after the = sign, with no spaces
+   - Save the file (Ctrl+S) and close Notepad
+
+3. Run the app
+   - Double-click LabelPrinter.exe
+   - A black window will open - leave it open, that's the app running
+   - Your web browser should open automatically to the label printer page
+     (if it doesn't, open a browser and go to: http://127.0.0.1:5050)
+
+4. If Windows shows a blue "Windows protected your PC" screen
+   - This is expected for an internal tool that isn't officially signed -
+     it is not a virus warning
+   - Click "More info", then "Run anyway"
+
+5. To stop the app
+   - Close the black window
+
+Trouble?
+--------
+- Page says "No monday.com API token configured": you missed step 2, or
+  there's a typo/extra space in settings.env.
+- Page loads but Print Label fails: check the printer is on and the black
+  window for an error message; contact Eitan with what it says.
+- Nothing opens at all: check the black window for an error message before
+  closing it, and send a screenshot to Eitan.

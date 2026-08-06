@@ -21,7 +21,17 @@ MAX_TITLE_LINES = 6  # sanity cap against pathological input, not a normal ceili
 
 NAME_FONT_SIZE = 48
 INFO_FONT_SIZE = 40  # subtitle (sample/category) words and the date line
-FONT_PATH = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
+
+# Bold system font, first match wins. Different install layouts per OS, so
+# try the common ones for each rather than hardcoding a single Mac-only path
+# (this app is Mac-dev / Windows-distribution). Pillow's own scalable
+# built-in font is the last resort - it ships inside Pillow itself, so it's
+# always available even if none of these paths exist on a given machine.
+_FONT_CANDIDATES = [
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",  # macOS
+    "C:\\Windows\\Fonts\\arialbd.ttf",  # Windows
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  # Linux
+]
 
 # Splits a word after each hyphen (keeping the hyphen attached to the
 # preceding chunk) so long hyphenated codes like "1R-DS-TOE40(106-250)-70(2)-Li"
@@ -31,10 +41,12 @@ _HYPHEN_SPLIT = re.compile(r"(?<=-)")
 
 
 def _load_font(size: int) -> ImageFont.FreeTypeFont:
-    try:
-        return ImageFont.truetype(FONT_PATH, size)
-    except OSError:
-        return ImageFont.load_default()
+    for path in _FONT_CANDIDATES:
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            continue
+    return ImageFont.load_default(size=size)
 
 
 def _split_oversized_chunk(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont,
