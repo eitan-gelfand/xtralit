@@ -121,6 +121,11 @@ if __name__ == "__main__":
         print(f"If your browser doesn't open automatically, go to {APP_URL}")
         print("Keep this window open while printing. Close it to stop.")
 
-        app.run(host="127.0.0.1", port=5050, debug=debug, threaded=True)
+        if debug:
+            # Waitress has no reloader; keep Flask's dev server for LABEL_PRINTER_DEBUG=1.
+            app.run(host="127.0.0.1", port=5050, debug=True, threaded=True)
+        else:
+            from waitress import serve
+            serve(app, host="127.0.0.1", port=5050, threads=4)
     except Exception as exc:
         _pause_on_crash(exc)
