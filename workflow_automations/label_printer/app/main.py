@@ -16,16 +16,43 @@ import webbrowser
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+if getattr(sys, "frozen", False):
+    # Set up before anything else so even an import-time crash below gets
+    # logged: the frozen build has no console window (see build workflow's
+    # --noconsole), so this file is the only way to see what happened.
+    # Truncated (not appended) on every start - see Step 2 commit for why.
+    try:
+        _log_path = os.path.join(os.path.expanduser("~"), "label_printer_log.txt")
+        logging.basicConfig(filename=_log_path, filemode="w", level=logging.INFO)
+        sys.stdout = open(_log_path, "a")
+        sys.stderr = sys.stdout
+    except Exception:
+        pass  # best-effort - a broken home dir shouldn't block startup
+else:
+    logging.basicConfig(level=logging.INFO)
+
 
 def _pause_on_crash(exc: BaseException):
-    """A double-clicked .exe's console window closes the instant the process
-    exits, so an unhandled exception flashes and vanishes before anyone can
-    read it. Print the traceback and wait for a keypress instead - only
-    matters for the frozen build; in dev the traceback stays on screen and
-    exiting immediately is fine."""
-    traceback.print_exception(type(exc), exc, exc.__traceback__)
+    """No console window in the frozen build (--noconsole) to print a
+    traceback into or read a keypress from - the app would just vanish with
+    no explanation. Log the exception (logging is set up above, before this
+    can be reached) and show a native message box instead. In dev, the
+    traceback stays on the real console and exiting immediately is fine."""
     if getattr(sys, "frozen", False):
-        input("\nSomething went wrong (see above). Press Enter to close this window...")
+        logging.error("Fatal error", exc_info=(type(exc), exc, exc.__traceback__))
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                f"Label Printer crashed:\n\n{exc}\n\n"
+                f"See label_printer_log.txt in your home folder for details.",
+                "Label Printer - Error",
+                0x10,  # MB_ICONERROR
+            )
+        except Exception:
+            pass
+    else:
+        traceback.print_exception(type(exc), exc, exc.__traceback__)
     sys.exit(1)
 
 
@@ -62,19 +89,6 @@ try:
         _template_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 
     app = Flask(__name__, template_folder=_template_folder)
-
-    if getattr(sys, "frozen", False):
-        # Console is hidden in the frozen build, so this file is the only way
-        # to see what happened. Truncated (not appended) on every start: this
-        # app is simple enough that whatever broke this session is what
-        # matters, and an ever-growing log across months of runs would just
-        # bury it.
-        log_path = os.path.join(os.path.expanduser("~"), "label_printer_log.txt")
-        logging.basicConfig(filename=log_path, filemode="w", level=logging.INFO)
-        sys.stdout = open(log_path, "a")
-        sys.stderr = sys.stdout
-    else:
-        logging.basicConfig(level=logging.INFO)
 except Exception as exc:
     _pause_on_crash(exc)
 
