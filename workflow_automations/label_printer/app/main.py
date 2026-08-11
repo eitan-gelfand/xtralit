@@ -62,7 +62,19 @@ try:
         _template_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 
     app = Flask(__name__, template_folder=_template_folder)
-    logging.basicConfig(level=logging.INFO)
+
+    if getattr(sys, "frozen", False):
+        # Console is hidden in the frozen build, so this file is the only way
+        # to see what happened. Truncated (not appended) on every start: this
+        # app is simple enough that whatever broke this session is what
+        # matters, and an ever-growing log across months of runs would just
+        # bury it.
+        log_path = os.path.join(os.path.expanduser("~"), "label_printer_log.txt")
+        logging.basicConfig(filename=log_path, filemode="w", level=logging.INFO)
+        sys.stdout = open(log_path, "a")
+        sys.stderr = sys.stdout
+    else:
+        logging.basicConfig(level=logging.INFO)
 except Exception as exc:
     _pause_on_crash(exc)
 
